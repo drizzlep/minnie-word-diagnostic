@@ -1,4 +1,4 @@
-const CACHE = "minnie-diagnostic-v2";
+const CACHE = "minnie-diagnostic-data-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -6,8 +6,10 @@ const APP_SHELL = [
   "./manifest.webmanifest",
   "./src/app.js",
   "./src/data.js",
+  "./src/curriculum.js",
   "./src/diagnostic.js",
   "./src/storage.js",
+  "./src/state-version.js",
   "./assets/icon-192.png",
   "./assets/icon-512.png"
 ];

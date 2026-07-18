@@ -95,6 +95,7 @@ export function generateReport({ items, attempts, novelWordIds = [], excludedWor
       wordId: item.wordId,
       word: item.answer,
       meaning: item.meaning,
+      curriculum: item.curriculum ?? null,
       lengthBand: item.lengthBand,
       unknown: Boolean(attempt.unknown),
       errors: score.errorTypes,
@@ -107,9 +108,9 @@ export function generateReport({ items, attempts, novelWordIds = [], excludedWor
   return {
     verdict: {
       passed,
-      label: passed ? "小学常见词汇拼写抽测初步达标" : "小学常见词汇拼写抽测暂未达标",
+      label: passed ? "广州教科版小学词汇抽测初步达标" : "广州教科版小学词汇抽测暂未达标",
       failedMetrics,
-      caveat: "这是家庭学习诊断，不代表听力、语法、阅读、写作等小学英语整体水平。",
+      caveat: "这是广州教科版教材词表的家庭抽样诊断，不代表完整教材覆盖，也不代表听力、语法、阅读、写作等小学英语整体水平。",
     },
     metrics,
     lengthBands,

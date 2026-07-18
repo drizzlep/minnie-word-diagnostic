@@ -1,7 +1,7 @@
 {
   "name": "米妮单词诊断",
   "short_name": "单词诊断",
-  "description": "广州小学英语词汇拼写两日诊断",
+  "description": "广州教科版（三年级起点）小学英语词汇拼写两日诊断",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

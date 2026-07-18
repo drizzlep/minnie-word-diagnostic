@@ -1,6 +1,8 @@
-import { exams, practiceItems, novelCandidates, buildNovelItems, selectNovelCandidate, SOURCE_LABEL } from "./data.js";
+import { exams, practiceItems, novelCandidates, buildNovelItems, selectNovelCandidate, SOURCE_LABEL, DATASET_VERSION } from "./data.js";
+import { CURRICULUM_SOURCES } from "./curriculum.js";
 import { generateReport, scoreAttempt } from "./diagnostic.js";
 import { loadState, saveState, clearState } from "./storage.js";
+import { storedStateStatus } from "./state-version.js";
 
 const app = document.querySelector("#app");
 const SECOND_DAY_MIN_MS = 18 * 60 * 60 * 1000;
@@ -34,6 +36,7 @@ const ERROR_LABELS = {
   choice: "识别错误",
 };
 
+let legacyState = null;
 let state = await initialiseState();
 let currentInput = "";
 let questionStartedAt = Date.now();
@@ -65,13 +68,18 @@ render();
 
 async function initialiseState() {
   const saved = await loadState();
-  if (saved?.version === 1) return saved;
+  const status = storedStateStatus(saved, DATASET_VERSION);
+  if (status === "current") return saved;
+  if (status === "legacy") {
+    legacyState = saved;
+    return { ...freshState(), screen: "dataset-update" };
+  }
   return freshState();
 }
 
 function freshState() {
   return {
-    version: 1,
+    version: DATASET_VERSION,
     screen: "welcome",
     form: "A",
     practiceIndex: 0,
@@ -95,6 +103,7 @@ function render() {
   if (questionTimer) window.clearTimeout(questionTimer);
   switch (state.screen) {
     case "welcome": renderWelcome(); break;
+    case "dataset-update": renderDatasetUpdate(); break;
     case "practice": renderQuestion(practiceItems[state.practiceIndex], state.practiceIndex, practiceItems.length, "练习"); break;
     case "day1": renderQuestion(exams[state.form].day1[state.day1Index], state.day1Index, exams[state.form].day1.length, "第一天 · 基础筛查"); break;
     case "novel-intro": renderNovelIntro(); break;
@@ -116,6 +125,20 @@ function render() {
   app.focus({ preventScroll: true });
 }
 
+function renderDatasetUpdate() {
+  app.innerHTML = `
+    <section class="panel">
+      <p class="eyebrow">题库已更新</p>
+      <h2>旧测试进度仍然保留</h2>
+      <p class="lead">教材题已改为广州教科版（三年级起点）的教材词表抽样。旧题与新题不同，不能安全接着计分；请先导出旧进度，再开始新版测试。</p>
+      <div class="action-row">
+        <button class="secondary-button" data-action="export-legacy">导出旧进度</button>
+        <button class="primary-button" data-action="start-updated">开始新版测试</button>
+      </div>
+      <div class="notice" style="margin-top:20px">只有点击“开始新版测试”后，旧进度才会从本机替换。</div>
+    </section>`;
+}
+
 function renderWelcome() {
   const resumed = state.screen !== "welcome" || state.day1Index > 0 || state.practiceIndex > 0;
   app.innerHTML = `
@@ -131,7 +154,7 @@ function renderWelcome() {
         <ul class="facts">
           <li><strong>两次完成</strong>每次约 10–15 分钟，间隔一天。</li>
           <li><strong>独立作答</strong>不强制限时，不会就选“没印象”。</li>
-          <li><strong>只测真实单词</strong>参考广州教科版，不做同龄排名。</li>
+          <li><strong>教材来源已记录</strong>广州教科版三年级起点，题目记录册次与单元。</li>
         </ul>
       </div>
       <div class="length-ruler" aria-label="单词长度分组">
@@ -317,6 +340,7 @@ function renderReport() {
         <div>
           <p class="eyebrow">完整诊断报告</p>
           <h2>这不是从头再来，<br>而是找准下一步。</h2>
+          <p class="question-hint">${SOURCE_LABEL}；正式教材题均记录年级、册次和单元，并以第三方汇总词表核对，不等同于官方教材页。</p>
         </div>
         <div class="verdict ${report.verdict.passed ? "pass" : ""}">
           <strong>${report.verdict.label}</strong>
@@ -369,6 +393,19 @@ async function handleClick(event) {
   const { action, value, word } = button.dataset;
   if (submitting && ["submit-spelling", "unknown", "skip", "choose"].includes(action)) return;
   if (action === "explain") { renderExplanation(); return; }
+  if (action === "export-legacy") {
+    downloadJson(`米妮单词诊断-旧版进度-${dateStamp()}.json`, { app: "米妮单词诊断", exportedAt: new Date().toISOString(), legacyState });
+    return;
+  }
+  if (action === "start-updated") {
+    if (window.confirm("确认已经保存旧进度，并开始新版教材测试吗？")) {
+      legacyState = null;
+      state = freshState();
+      await saveState(state);
+      render();
+    }
+    return;
+  }
   if (action === "home") { state.screen = "welcome"; persistAndRender(); return; }
   if (action === "start") {
     if (state.screen === "welcome") state.screen = state.practiceIndex >= practiceItems.length ? "day1" : "practice";
@@ -588,6 +625,7 @@ function exportPayload(includeReport) {
     app: "米妮单词诊断",
     version: state.version,
     source: SOURCE_LABEL,
+    curriculumSources: CURRICULUM_SOURCES,
     exportedAt: new Date().toISOString(),
     form: state.form,
     state,
