@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#173f5f">
+    <meta name="description" content="米妮的广州教科版常见词汇拼写参考诊断">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <link rel="icon" href="./assets/icon-192.png">
+    <link rel="apple-touch-icon" href="./assets/icon-192.png">
+    <link rel="stylesheet" href="./styles.css">
+    <title>米妮单词诊断</title>
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="返回首页">
+          <span class="brand-mark" aria-hidden="true">M</span>
+          <span>
+            <strong>米妮单词诊断</strong>
+            <small>广州教科版常见词参考</small>
+          </span>
+        </a>
+        <button id="install-button" class="quiet-button" type="button" hidden>安装到桌面</button>
+      </header>
+      <main id="app" tabindex="-1" aria-live="polite"></main>
+      <footer class="footer-note">测试结果只用于家庭学习规划，不代表英语整体水平。</footer>
+    </div>
+    <noscript>这个测试需要启用 JavaScript。</noscript>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
