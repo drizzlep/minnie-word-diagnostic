@@ -80,6 +80,7 @@ async function initialiseState() {
 }
 
 function normaliseState(saved) {
+  const trainingStage = ["learn", "spell", "review"].includes(saved.trainingStage) ? saved.trainingStage : "learn";
   return {
     ...freshState(),
     ...saved,
@@ -89,8 +90,11 @@ function normaliseState(saved) {
     trainingWordState: saved.trainingWordState ?? {},
     trainingQueue: saved.trainingQueue ?? [],
     trainingIndex: saved.trainingIndex ?? 0,
-    trainingAnswer: saved.trainingAnswer ?? "",
+    // Old in-progress sessions had no teaching stage; restart them safely at
+    // the memory lesson instead of restoring an answer beside the prompt.
+    trainingAnswer: trainingStage === "spell" ? (saved.trainingAnswer ?? "") : "",
     trainingFeedback: saved.trainingFeedback ?? null,
+    trainingStage,
     trainingGuesses: saved.trainingGuesses ?? [],
     trainingSessionDate: saved.trainingSessionDate ?? null,
     trainingSessionStartedAt: saved.trainingSessionStartedAt ?? null,
@@ -126,6 +130,7 @@ function freshState() {
     trainingIndex: 0,
     trainingAnswer: "",
     trainingFeedback: null,
+    trainingStage: "learn",
     trainingGuesses: [],
     trainingSessionDate: null,
     trainingSessionStartedAt: null,
@@ -235,18 +240,27 @@ function renderTraining() {
   const progress = state.trainingIndex / state.trainingQueue.length * 100;
   const card = memoryCardFor(item.word);
   const feedbackHtml = state.trainingFeedback ? `<div class="feedback ${state.trainingFeedback.kind}">${escapeHtml(state.trainingFeedback.message)}</div>` : "";
+  const imageHtml = card.image ? `<div class="memory-image-wrap"><img class="memory-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(item.meaning)}的记忆图" loading="lazy"></div>` : "";
+  const memoryHtml = `${imageHtml}<div class="mnemonic-story">💡 ${escapeHtml(card.mnemonic)}</div><div class="word-chunks">${card.chunks.map((chunk) => `<span>${escapeHtml(chunk)}</span>`).join("")}</div>`;
+  const isLearning = state.trainingStage === "learn";
+  const isReview = state.trainingStage === "review";
+  const isSpell = state.trainingStage === "spell";
+  const stageHeader = isSpell
+    ? `<div class="training-word-row"><div><div class="learning-meaning">${item.meaning}</div><div class="question-hint">回想刚才的画面和词块</div></div><button class="audio-button" data-action="play-audio" data-word="${item.word}">听发音</button></div>`
+    : `<div class="training-word-row"><div><div class="learning-word">${item.word}</div><div class="learning-meaning">${item.meaning}</div></div><button class="audio-button" data-action="play-audio" data-word="${item.word}">听发音</button></div>`;
+  let body = "";
+  if (isLearning) {
+    body = `${memoryHtml}<p class="question-label">先用图像和谐音记住它，再开始拼写</p><p class="question-hint">先观察图片，把声音、画面和词块连起来。这里不是考试。</p><button class="primary-button" data-action="training-start-spelling">记住了，开始拼写</button>`;
+  } else if (isReview) {
+    body = `${memoryHtml}${feedbackHtml}<p class="question-label">重新看一遍记忆法，再开始拼写</p><button class="primary-button" data-action="training-start-spelling">看完了，再试一次</button><div class="unknown-row"><button class="quiet-button" data-action="training-skip">今天先跳过</button></div>`;
+  } else {
+    body = `<p class="question-label">现在不用看答案，拼出这个词（小写）</p><div class="spelling-display ${state.trainingAnswer ? "" : "placeholder"}">${state.trainingAnswer ? escapeHtml(state.trainingAnswer) : "用下面的小写字母键盘输入"}</div>${trainingKeyboard()}${feedbackHtml}<div class="unknown-row"><button class="quiet-button" data-action="training-hint">我又忘了，再看记忆法</button><button class="quiet-button" data-action="training-skip">今天先跳过</button></div>`;
+  }
   app.innerHTML = `<section class="panel question-card training-card">
     <div class="progress-meta"><span>暑假训练 · ${item.theme}</span><span>${state.trainingIndex + 1} / ${state.trainingQueue.length}</span></div>
     <div class="progress-track"><span style="width:${progress}%"></span></div>
-    <div class="training-word-row"><div><div class="learning-word">${item.word}</div><div class="learning-meaning">${item.meaning}</div></div><button class="audio-button" data-action="play-audio" data-word="${item.word}">听发音</button></div>
-    ${card.image ? `<div class="memory-image-wrap"><img class="memory-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(item.meaning)}的记忆图" loading="lazy"></div>` : ""}
-    <div class="mnemonic-story">💡 ${escapeHtml(card.mnemonic)}</div>
-    <div class="word-chunks">${card.chunks.map((chunk) => `<span>${escapeHtml(chunk)}</span>`).join("")}</div>
-    <p class="question-label">现在不用看答案，拼出这个词（小写）</p>
-    <div class="spelling-display ${state.trainingAnswer ? "" : "placeholder"}">${state.trainingAnswer ? escapeHtml(state.trainingAnswer) : "用下面的小写字母键盘输入"}</div>
-    ${trainingKeyboard()}
-    ${feedbackHtml}
-    <div class="unknown-row"><button class="quiet-button" data-action="training-hint">再看一次线索</button><button class="quiet-button" data-action="training-skip">今天先跳过</button></div>
+    ${stageHeader}
+    ${body}
   </section>`;
 }
 
@@ -279,6 +293,7 @@ function startTraining() {
   state.trainingIndex = 0;
   state.trainingAnswer = "";
   state.trainingFeedback = null;
+  state.trainingStage = "learn";
   state.trainingSessionStartedAt = Date.now();
   state.trainingSessionDate = today;
   state.trainingSessionCompletedAt = null;
@@ -300,10 +315,12 @@ async function submitTraining() {
     state.trainingIndex += 1;
     state.trainingAnswer = "";
     state.trainingFeedback = null;
+    state.trainingStage = "learn";
     if (state.trainingIndex >= state.trainingQueue.length) { state.trainingSessionCompletedAt = Date.now(); state.screen = "training-done"; }
   } else {
     state.trainingAnswer = "";
-    state.trainingFeedback = { kind: "try", message: `差一点！先记住 ${memoryCardFor(item.word).chunks.join(" + ")}，再试一次。` };
+    state.trainingStage = "review";
+    state.trainingFeedback = { kind: "try", message: "这次先不继续猜。请重新看上面的图像、谐音和词块，再开始下一次拼写。" };
   }
   document.querySelectorAll(".training-card button").forEach((button) => { button.disabled = true; });
   try {
@@ -682,10 +699,11 @@ async function handleClick(event) {
   if (submitting && ["submit-spelling", "unknown", "skip", "choose", "training-submit", "training-skip"].includes(action)) return;
   if (action === "open-training") { state.screen = "training-home"; persistAndRender(); return; }
   if (action === "start-training") { startTraining(); return; }
+  if (action === "training-start-spelling") { if (state.trainingStage === "learn" || state.trainingStage === "review") { state.trainingStage = "spell"; state.trainingAnswer = ""; state.trainingFeedback = null; persistAndRender(); } return; }
   if (action === "training-letter") { state.trainingAnswer += value; state.trainingFeedback = null; render(); return; }
   if (action === "training-backspace") { state.trainingAnswer = state.trainingAnswer.slice(0, -1); state.trainingFeedback = null; render(); return; }
   if (action === "training-submit") { submitTraining(); return; }
-  if (action === "training-hint") { state.trainingFeedback = { kind: "try", message: `线索：${memoryCardFor(trainingItem().word).mnemonic}` }; render(); return; }
+  if (action === "training-hint") { state.trainingStage = "review"; state.trainingAnswer = ""; state.trainingFeedback = { kind: "try", message: "先看图和谐音，把这个词重新连起来。准备好后再开始拼写。" }; persistAndRender(); return; }
   if (action === "training-skip") { skipTraining(); return; }
   if (action === "export-training") { downloadJson(`米妮暑假训练进度-${dateStamp()}.json`, { app: "米妮单词训练", edition: SUMMER_TRAINING_EDITION, exportedAt: new Date().toISOString(), trainingWordState: state.trainingWordState, trainingGuesses: state.trainingGuesses }); return; }
   if (action === "explain") { renderExplanation(); return; }
@@ -989,6 +1007,7 @@ function withTrainingState(nextState) {
     trainingIndex: state.trainingIndex,
     trainingAnswer: state.trainingAnswer,
     trainingFeedback: state.trainingFeedback,
+    trainingStage: state.trainingStage,
     trainingGuesses: state.trainingGuesses,
     trainingSessionDate: state.trainingSessionDate,
     trainingSessionStartedAt: state.trainingSessionStartedAt,
