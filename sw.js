@@ -1,4 +1,4 @@
-const CACHE = "minnie-diagnostic-data-v2";
+const CACHE = "minnie-diagnostic-data-v2-lowercase-keyboard";
 const APP_SHELL = [
   "./",
   "./index.html",

@@ -125,7 +125,7 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(45,127,249,.
 .spelling-display { min-height: 70px; margin: 18px auto; font-family: "Arial Rounded MT Bold", sans-serif; font-size: clamp(38px, 9vw, 62px); letter-spacing: .08em; overflow-wrap: anywhere; }
 .spelling-display.placeholder { color: #b7c4cf; letter-spacing: .02em; font-family: inherit; font-size: 18px; }
 .letter-keyboard { display: grid; grid-template-columns: repeat(7, 1fr); gap: 7px; max-width: 650px; margin: 20px auto 0; }
-.key { min-height: 48px; border: 0; border-radius: 12px; color: var(--ink); background: #eaf0f6; cursor: pointer; font-weight: 900; text-transform: uppercase; }
+.key { min-height: 48px; border: 0; border-radius: 12px; color: var(--ink); background: #eaf0f6; cursor: pointer; font-weight: 900; }
 .key.wide { grid-column: span 2; color: white; background: var(--ink); }
 .key.submit { grid-column: span 3; color: white; background: var(--blue); }
 .unknown-row { display: flex; justify-content: center; gap: 10px; margin-top: 16px; }

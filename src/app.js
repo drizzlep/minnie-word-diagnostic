@@ -227,9 +227,9 @@ function choiceButtons(choices) {
 }
 
 function keyboard() {
-  const letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+  const letters = "abcdefghijklmnopqrstuvwxyz".split("");
   return `<div class="letter-keyboard" aria-label="字母键盘">
-    ${letters.map((letter) => `<button class="key" data-action="letter" data-value="${letter.toLowerCase()}">${letter}</button>`).join("")}
+    ${letters.map((letter) => `<button class="key" data-action="letter" data-value="${letter}">${letter}</button>`).join("")}
     <button class="key wide" data-action="backspace">删除</button>
     <button class="key submit" data-action="submit-spelling" ${currentInput ? "" : "disabled"}>提交</button>
   </div>`;
