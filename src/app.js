@@ -2,8 +2,9 @@ import { exams, practiceItems, novelCandidates, buildNovelItems, selectNovelCand
 import { CURRICULUM_SOURCES } from "./curriculum.js";
 import { generateReport, scoreAttempt } from "./diagnostic.js";
 import { memoryCardFor, rescueWordIds } from "./memory-cards.js";
-import { loadState, saveState, clearState } from "./storage.js";
+import { loadState, saveState } from "./storage.js";
 import { storedStateStatus } from "./state-version.js";
+import { buildTrainingQueue, countDueWords, nextDueAt, summerTrainingWords, SUMMER_TRAINING_EDITION, SUMMER_TRAINING_SOURCE_NOTE, TRAINING_SESSION_SIZE } from "./summer-training.js";
 
 const app = document.querySelector("#app");
 const SECOND_DAY_MIN_MS = 18 * 60 * 60 * 1000;
@@ -85,6 +86,15 @@ function normaliseState(saved) {
     rescueWordIds: saved.rescueWordIds ?? [],
     rescueAttempts: saved.rescueAttempts ?? [],
     rescueStars: saved.rescueStars ?? 0,
+    trainingWordState: saved.trainingWordState ?? {},
+    trainingQueue: saved.trainingQueue ?? [],
+    trainingIndex: saved.trainingIndex ?? 0,
+    trainingAnswer: saved.trainingAnswer ?? "",
+    trainingFeedback: saved.trainingFeedback ?? null,
+    trainingGuesses: saved.trainingGuesses ?? [],
+    trainingSessionDate: saved.trainingSessionDate ?? null,
+    trainingSessionStartedAt: saved.trainingSessionStartedAt ?? null,
+    trainingSessionCompletedAt: saved.trainingSessionCompletedAt ?? null,
   };
 }
 
@@ -111,6 +121,15 @@ function freshState() {
     rescueAttempts: [],
     rescueStars: 0,
     completedAt: null,
+    trainingWordState: {},
+    trainingQueue: [],
+    trainingIndex: 0,
+    trainingAnswer: "",
+    trainingFeedback: null,
+    trainingGuesses: [],
+    trainingSessionDate: null,
+    trainingSessionStartedAt: null,
+    trainingSessionCompletedAt: null,
   };
 }
 
@@ -135,6 +154,9 @@ function render() {
     case "rescue-complete": renderRescueComplete(); break;
     case "day2": renderQuestion(exams[state.form].day2[state.day2Index], state.day2Index, exams[state.form].day2.length, "第二天 · 长词定位"); break;
     case "report": renderReport(); break;
+    case "training-home": renderTrainingHome(); break;
+    case "training": renderTraining(); break;
+    case "training-done": renderTrainingDone(); break;
     default: renderWelcome();
   }
   const nextItem = currentItem();
@@ -170,11 +192,12 @@ function renderWelcome() {
         <div class="action-row">
           <button class="primary-button" data-action="start">${resumed ? "继续上次测试" : "开始第一天"}</button>
           <button class="secondary-button" data-action="explain">先看测试说明</button>
+          <button class="quiet-button" data-action="open-training">暑假训练</button>
         </div>
         <ul class="facts">
           <li><strong>两次完成</strong>每次约 10–15 分钟，间隔一天。</li>
           <li><strong>独立作答</strong>不强制限时，不会就选“没印象”。</li>
-          <li><strong>教材来源已记录</strong>广州教科版三年级起点，题目记录册次与单元。</li>
+          <li><strong>教材来源已记录</strong>小学诊断与初一暑假训练分开保存，开学可校准。</li>
         </ul>
       </div>
       <div class="length-ruler" aria-label="单词长度分组">
@@ -184,6 +207,131 @@ function renderWelcome() {
         <div><strong>10+</strong><span>超长词观察</span></div>
       </div>
     </section>`;
+}
+
+
+function renderTrainingHome() {
+  const completed = Object.values(state.trainingWordState).filter((item) => item.mastery >= 2).length;
+  const due = countDueWords(state.trainingWordState, Date.now());
+  const unseen = summerTrainingWords.filter((item) => !state.trainingWordState[item.wordId]?.attempts).length;
+  const activeToday = state.trainingSessionDate === localDateStamp() && state.trainingQueue.length > 0 && state.trainingIndex < state.trainingQueue.length;
+  const completedToday = state.trainingSessionDate === localDateStamp() && Boolean(state.trainingSessionCompletedAt);
+  app.innerHTML = `
+    <section class="panel training-hero">
+      <p class="eyebrow">暑假正式训练 · ${SUMMER_TRAINING_EDITION}</p>
+      <h2>每天 8 个词，先赢一小关</h2>
+      <p class="lead">不用等开学拿到课本。先练广州地区新版沪教牛津七上与小学高频词的共同核心；开学后只做增删校准，不会推翻已经记住的词。</p>
+      <div class="training-stats"><div><strong>${completed}</strong><span>已稳住</span></div><div><strong>${summerTrainingWords.length}</strong><span>暑假候选</span></div><div><strong>${due}</strong><span>到期复习</span></div></div>
+      <div class="notice">${SUMMER_TRAINING_SOURCE_NOTE}</div>
+      <div class="action-row"><button class="primary-button" data-action="start-training" ${completedToday ? "disabled" : ""}>${completedToday ? "今天已完成 8 词" : activeToday ? "继续今天的训练" : "开始今天的 8 词训练"}</button><button class="secondary-button" data-action="home">回到诊断</button></div>
+      ${completedToday ? `<p class="question-hint">还剩 ${unseen} 个候选新词。明天再来，系统会先安排到期复习。</p>` : ""}
+    </section>
+    <section class="panel"><h3>训练规则</h3><div class="bar-list"><div class="bar-row"><span>新词</span><div class="bar"><span style="width:75%"></span></div><strong>最多8个新词</strong></div><div class="bar-row"><span>复习</span><div class="bar"><span style="width:25%"></span></div><strong>最多2个复习</strong></div></div><p class="question-hint">每词先看英式发音和谐音/词块线索，再用小写字母拼写；答对后按 1、2、4、7、14 天复习。答错不会扣分，明天还会回来。</p></section>`;
+}
+
+function renderTraining() {
+  const item = trainingItem();
+  if (!item) { state.screen = "training-done"; persistAndRender(); return; }
+  const progress = state.trainingIndex / state.trainingQueue.length * 100;
+  const card = memoryCardFor(item.word);
+  const feedbackHtml = state.trainingFeedback ? `<div class="feedback ${state.trainingFeedback.kind}">${escapeHtml(state.trainingFeedback.message)}</div>` : "";
+  app.innerHTML = `<section class="panel question-card training-card">
+    <div class="progress-meta"><span>暑假训练 · ${item.theme}</span><span>${state.trainingIndex + 1} / ${state.trainingQueue.length}</span></div>
+    <div class="progress-track"><span style="width:${progress}%"></span></div>
+    <div class="training-word-row"><div><div class="learning-word">${item.word}</div><div class="learning-meaning">${item.meaning}</div></div><button class="audio-button" data-action="play-audio" data-word="${item.word}">听发音</button></div>
+    <div class="mnemonic-story">💡 ${escapeHtml(card.mnemonic)}</div>
+    <div class="word-chunks">${card.chunks.map((chunk) => `<span>${escapeHtml(chunk)}</span>`).join("")}</div>
+    <p class="question-label">现在不用看答案，拼出这个词（小写）</p>
+    <div class="spelling-display ${state.trainingAnswer ? "" : "placeholder"}">${state.trainingAnswer ? escapeHtml(state.trainingAnswer) : "用下面的小写字母键盘输入"}</div>
+    ${trainingKeyboard()}
+    ${feedbackHtml}
+    <div class="unknown-row"><button class="quiet-button" data-action="training-hint">再看一次线索</button><button class="quiet-button" data-action="training-skip">今天先跳过</button></div>
+  </section>`;
+}
+
+function trainingKeyboard() {
+  return `<div class="letter-keyboard" aria-label="小写字母键盘">${"abcdefghijklmnopqrstuvwxyz".split("").map((letter) => `<button class="key" data-action="training-letter" data-value="${letter}">${letter}</button>`).join("")}<button class="key wide" data-action="training-backspace">删除</button><button class="key submit" data-action="training-submit" ${state.trainingAnswer ? "" : "disabled"}>提交</button></div>`;
+}
+
+function renderTrainingDone() {
+  const completed = state.trainingQueue.length;
+  app.innerHTML = `<section class="panel quest-panel"><div class="quest-badge large"><span>★</span><strong>今日训练完成</strong><small>不和别人比，只和昨天的自己比</small></div><h2>你完成了 ${completed} 个词！</h2><p class="lead">今天的成绩已经保存在这台设备上。明天打开“暑假训练”，系统会优先安排到期复习，再给少量新词。</p><div class="action-row"><button class="primary-button" data-action="open-training">查看训练进度</button><button class="secondary-button" data-action="home">回到诊断</button><button class="quiet-button" data-action="export-training">导出训练进度</button></div></section>`;
+}
+
+function trainingItem() { return summerTrainingWords.find((item) => item.wordId === state.trainingQueue[state.trainingIndex]); }
+
+function startTraining() {
+  const today = localDateStamp();
+  if (state.trainingSessionDate === today && state.trainingSessionCompletedAt) {
+    state.screen = "training-done";
+    persistAndRender();
+    return;
+  }
+  // Keep the saved queue while today's session is active so a refresh or
+  // leaving the screen cannot replace unfinished words with a new queue.
+  if (state.trainingSessionDate === today && state.trainingQueue.length && state.trainingIndex < state.trainingQueue.length) {
+    state.screen = "training";
+    persistAndRender();
+    return;
+  }
+  state.trainingQueue = buildTrainingQueue(state.trainingWordState, Date.now(), TRAINING_SESSION_SIZE).map((item) => item.wordId);
+  state.trainingIndex = 0;
+  state.trainingAnswer = "";
+  state.trainingFeedback = null;
+  state.trainingSessionStartedAt = Date.now();
+  state.trainingSessionDate = today;
+  state.trainingSessionCompletedAt = null;
+  state.trainingGuesses = [];
+  state.screen = state.trainingQueue.length ? "training" : "training-done";
+  persistAndRender();
+}
+
+async function submitTraining() {
+  const item = trainingItem();
+  if (!item || !state.trainingAnswer || submitting) return;
+  submitting = true;
+  const answer = state.trainingAnswer.toLowerCase();
+  const correct = answer === item.word;
+  state.trainingGuesses.push({ wordId: item.wordId, response: answer, correct, createdAt: Date.now() });
+  const old = state.trainingWordState[item.wordId] ?? { box: 0, mastery: 0, attempts: 0 };
+  if (correct) {
+    state.trainingWordState[item.wordId] = { ...old, attempts: old.attempts + 1, correct: (old.correct ?? 0) + 1, mastery: Math.min(2, old.mastery + 1), box: Math.min(4, old.box + 1), lastAttemptAt: Date.now(), dueAt: nextDueAt(old.box, true, Date.now()) };
+    state.trainingIndex += 1;
+    state.trainingAnswer = "";
+    state.trainingFeedback = null;
+    if (state.trainingIndex >= state.trainingQueue.length) { state.trainingSessionCompletedAt = Date.now(); state.screen = "training-done"; }
+  } else {
+    state.trainingAnswer = "";
+    state.trainingFeedback = { kind: "try", message: `差一点！先记住 ${memoryCardFor(item.word).chunks.join(" + ")}，再试一次。` };
+  }
+  document.querySelectorAll(".training-card button").forEach((button) => { button.disabled = true; });
+  try {
+    await saveState(state);
+  } finally {
+    submitting = false;
+    render();
+  }
+}
+
+async function skipTraining() {
+  const item = trainingItem();
+  if (!item || submitting) return;
+  submitting = true;
+  document.querySelectorAll(".training-card button").forEach((button) => { button.disabled = true; });
+  const now = Date.now();
+  const old = state.trainingWordState[item.wordId] ?? { box: 0, mastery: 0, attempts: 0 };
+  state.trainingGuesses.push({ wordId: item.wordId, response: "", correct: false, skipped: true, createdAt: now });
+  state.trainingWordState[item.wordId] = { ...old, attempts: old.attempts + 1, correct: old.correct ?? 0, mastery: 0, box: 0, lastAttemptAt: now, dueAt: nextDueAt(0, false, now) };
+  state.trainingIndex += 1;
+  state.trainingAnswer = "";
+  state.trainingFeedback = null;
+  if (state.trainingIndex >= state.trainingQueue.length) { state.trainingSessionCompletedAt = now; state.screen = "training-done"; }
+  try {
+    await saveState(state);
+  } finally {
+    submitting = false;
+    render();
+  }
 }
 
 function renderExplanation() {
@@ -529,7 +677,15 @@ async function handleClick(event) {
   const button = event.target.closest("[data-action]");
   if (!button) return;
   const { action, value, word } = button.dataset;
-  if (submitting && ["submit-spelling", "unknown", "skip", "choose"].includes(action)) return;
+  if (submitting && ["submit-spelling", "unknown", "skip", "choose", "training-submit", "training-skip"].includes(action)) return;
+  if (action === "open-training") { state.screen = "training-home"; persistAndRender(); return; }
+  if (action === "start-training") { startTraining(); return; }
+  if (action === "training-letter") { state.trainingAnswer += value; state.trainingFeedback = null; render(); return; }
+  if (action === "training-backspace") { state.trainingAnswer = state.trainingAnswer.slice(0, -1); state.trainingFeedback = null; render(); return; }
+  if (action === "training-submit") { submitTraining(); return; }
+  if (action === "training-hint") { state.trainingFeedback = { kind: "try", message: `线索：${memoryCardFor(trainingItem().word).mnemonic}` }; render(); return; }
+  if (action === "training-skip") { skipTraining(); return; }
+  if (action === "export-training") { downloadJson(`米妮暑假训练进度-${dateStamp()}.json`, { app: "米妮单词训练", edition: SUMMER_TRAINING_EDITION, exportedAt: new Date().toISOString(), trainingWordState: state.trainingWordState, trainingGuesses: state.trainingGuesses }); return; }
   if (action === "explain") { renderExplanation(); return; }
   if (action === "export-legacy") {
     downloadJson(`米妮单词诊断-旧版进度-${dateStamp()}.json`, { app: "米妮单词诊断", exportedAt: new Date().toISOString(), legacyState });
@@ -623,15 +779,17 @@ async function handleClick(event) {
   if (action === "print-report") { window.print(); return; }
   if (action === "start-b") {
     if (window.confirm("B 卷用于 4–6 周后的复测。确认现在清除当前答题进度并开始 B 卷吗？请先导出本次报告。")) {
-      state = { ...freshState(), form: "B", screen: "practice" };
+      state = withTrainingState({ ...freshState(), form: "B", screen: "practice" });
       await saveState(state);
       render();
     }
     return;
   }
   if (action === "reset") {
-    if (window.confirm("确认清除本机的全部测试答案并重新开始吗？")) {
-      await clearState(); state = freshState(); render();
+    if (window.confirm("确认清除本机的诊断测试答案并重新开始吗？暑假训练记录会保留。")) {
+      state = withTrainingState(freshState());
+      await saveState(state);
+      render();
     }
   }
 }
@@ -821,6 +979,21 @@ function playAudio(word) {
   });
 }
 
+function withTrainingState(nextState) {
+  return {
+    ...nextState,
+    trainingWordState: state.trainingWordState,
+    trainingQueue: state.trainingQueue,
+    trainingIndex: state.trainingIndex,
+    trainingAnswer: state.trainingAnswer,
+    trainingFeedback: state.trainingFeedback,
+    trainingGuesses: state.trainingGuesses,
+    trainingSessionDate: state.trainingSessionDate,
+    trainingSessionStartedAt: state.trainingSessionStartedAt,
+    trainingSessionCompletedAt: state.trainingSessionCompletedAt,
+  };
+}
+
 async function persistAndRender() {
   await saveState(state);
   render();
@@ -901,6 +1074,11 @@ function downloadJson(filename, payload) {
 }
 
 function dateStamp() { return new Date().toISOString().slice(0, 10); }
+
+function localDateStamp() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+}
 
 function escapeHtml(value) {
   return String(value).replace(/[&<>"]/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[character]));

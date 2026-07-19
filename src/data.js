@@ -1,4 +1,5 @@
 import { CURRICULUM_EDITION, curriculumFor } from "./curriculum.js";
+import { summerTrainingWords } from "./summer-training.js";
 
 export const SOURCE_LABEL = `${CURRICULUM_EDITION}教材词表抽样`;
 export const DATASET_VERSION = 2;
@@ -149,7 +150,8 @@ export function allAudioWords() {
     .filter((item) => item.type === "audio")
     .map((item) => item.word);
   const novelWords = Object.values(novelCandidates).flat().map((item) => item.word);
-  return [...new Set([...fromQuestions, ...novelWords])].sort();
+  const trainingWords = summerTrainingWords.map((item) => item.word);
+  return [...new Set([...fromQuestions, ...novelWords, ...trainingWords])].sort();
 }
 
 function q(id, type, word, answer, choices = [], extra = {}) {

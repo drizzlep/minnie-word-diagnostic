@@ -1,4 +1,4 @@
-const CACHE = "minnie-diagnostic-data-v2-early-recall";
+const CACHE = "minnie-diagnostic-data-v2-summer-training";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -11,6 +11,7 @@ const APP_SHELL = [
   "./src/memory-cards.js",
   "./src/storage.js",
   "./src/state-version.js",
+  "./src/summer-training.js",
   "./assets/icon-192.png",
   "./assets/icon-512.png"
 ];
