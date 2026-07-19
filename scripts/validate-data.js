@@ -1,6 +1,7 @@
 import { exams, practiceItems, novelCandidates, allAudioWords, DATASET_VERSION } from "../src/data.js";
 import { CURRICULUM_OCCURRENCES, curriculumSource } from "../src/curriculum.js";
 import { summerTrainingWords } from "../src/summer-training.js";
+import { memoryCardFor } from "../src/memory-cards.js";
 import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
@@ -44,6 +45,10 @@ for (const word of allAudioWords()) {
 
 const serviceWorker = await readFile("sw.js", "utf8");
 for (const word of summerTrainingWords) {
+  const expectedImage = `./assets/memory/${word.word}.jpg`;
+  const card = memoryCardFor(word.word);
+  if (card.image !== expectedImage) errors.push(`记忆卡图片映射错误: ${word.word}`);
+  if (!serviceWorker.includes(expectedImage)) errors.push(`Service Worker 缺少记忆图: ${word.word}.jpg`);
   try { await access(path.resolve("assets/memory", `${word.word}.jpg`)); }
   catch { errors.push(`缺少记忆图: ${word.word}.jpg`); }
 }
