@@ -238,3 +238,19 @@ button:focus-visible, input:focus-visible { outline: 3px solid rgba(45,127,249,.
   main { min-height: 0; }
   .panel { break-inside: avoid; margin: 0 0 14px !important; padding: 22px; box-shadow: none; }
 }
+
+.memory-image-wrap {
+  margin: 16px auto;
+  max-width: 360px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: #fff8e7;
+  border: 1px solid rgba(23, 63, 95, .12);
+}
+
+.memory-image {
+  display: block;
+  width: 100%;
+  max-height: 210px;
+  object-fit: cover;
+}

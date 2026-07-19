@@ -1,6 +1,7 @@
 import { exams, practiceItems, novelCandidates, allAudioWords, DATASET_VERSION } from "../src/data.js";
 import { CURRICULUM_OCCURRENCES, curriculumSource } from "../src/curriculum.js";
-import { access } from "node:fs/promises";
+import { summerTrainingWords } from "../src/summer-training.js";
+import { access, readFile } from "node:fs/promises";
 import path from "node:path";
 
 const allItems = [...practiceItems, ...exams.A.day1, ...exams.A.day2, ...exams.B.day1, ...exams.B.day2];
@@ -41,7 +42,11 @@ for (const word of allAudioWords()) {
   catch { errors.push(`缺少音频: ${word}.mp3`); }
 }
 
-const serviceWorker = await import("node:fs/promises").then(({ readFile }) => readFile("sw.js", "utf8"));
+const serviceWorker = await readFile("sw.js", "utf8");
+for (const word of summerTrainingWords) {
+  try { await access(path.resolve("assets/memory", `${word.word}.jpg`)); }
+  catch { errors.push(`缺少记忆图: ${word.word}.jpg`); }
+}
 if (!serviceWorker.includes(`minnie-diagnostic-data-v${DATASET_VERSION}`)) errors.push("Service Worker 缓存版本未与题库版本同步");
 for (const asset of ["./src/curriculum.js", "./src/state-version.js", "./src/memory-cards.js", "./src/summer-training.js", "./assets/audio/index.json"]) {
   if (!serviceWorker.includes(asset)) errors.push(`Service Worker 缺少资源: ${asset}`);

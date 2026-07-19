@@ -239,6 +239,7 @@ function renderTraining() {
     <div class="progress-meta"><span>暑假训练 · ${item.theme}</span><span>${state.trainingIndex + 1} / ${state.trainingQueue.length}</span></div>
     <div class="progress-track"><span style="width:${progress}%"></span></div>
     <div class="training-word-row"><div><div class="learning-word">${item.word}</div><div class="learning-meaning">${item.meaning}</div></div><button class="audio-button" data-action="play-audio" data-word="${item.word}">听发音</button></div>
+    ${card.image ? `<div class="memory-image-wrap"><img class="memory-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(item.meaning)}的记忆图" loading="lazy"></div>` : ""}
     <div class="mnemonic-story">💡 ${escapeHtml(card.mnemonic)}</div>
     <div class="word-chunks">${card.chunks.map((chunk) => `<span>${escapeHtml(chunk)}</span>`).join("")}</div>
     <p class="question-label">现在不用看答案，拼出这个词（小写）</p>
@@ -551,6 +552,7 @@ function renderMemoryRescue() {
       <p class="question-label">第1步 · 找到记忆线索</p>
       <div class="learning-word">${word.word}</div>
       <div class="learning-meaning">${word.meaning}</div>
+      ${card.image ? `<div class="memory-image-wrap"><img class="memory-image" src="${escapeHtml(card.image)}" alt="${escapeHtml(word.meaning)}的记忆图" loading="lazy"></div>` : ""}
       <div class="word-chunks">${card.chunks.map((chunk) => `<span>${escapeHtml(chunk)}</span>`).join("")}</div>
       <div class="mnemonic-story">💡 ${escapeHtml(card.mnemonic)}</div>
       <button class="audio-button" data-action="play-audio" data-word="${word.word}">播放英式发音</button>
