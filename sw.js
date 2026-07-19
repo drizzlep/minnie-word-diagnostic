@@ -1,4 +1,4 @@
-const CACHE = "minnie-diagnostic-data-v2-summer-training-images";
+const CACHE = "minnie-diagnostic-data-v2-summer-training-stages";
 const APP_SHELL = [
   "./",
   "./index.html",
