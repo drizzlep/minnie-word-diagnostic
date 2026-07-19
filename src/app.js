@@ -1,6 +1,7 @@
 import { exams, practiceItems, novelCandidates, buildNovelItems, selectNovelCandidate, SOURCE_LABEL, DATASET_VERSION } from "./data.js";
 import { CURRICULUM_SOURCES } from "./curriculum.js";
 import { generateReport, scoreAttempt } from "./diagnostic.js";
+import { memoryCardFor, rescueWordIds } from "./memory-cards.js";
 import { loadState, saveState, clearState } from "./storage.js";
 import { storedStateStatus } from "./state-version.js";
 
@@ -69,12 +70,22 @@ render();
 async function initialiseState() {
   const saved = await loadState();
   const status = storedStateStatus(saved, DATASET_VERSION);
-  if (status === "current") return saved;
+  if (status === "current") return normaliseState(saved);
   if (status === "legacy") {
     legacyState = saved;
     return { ...freshState(), screen: "dataset-update" };
   }
   return freshState();
+}
+
+function normaliseState(saved) {
+  return {
+    ...freshState(),
+    ...saved,
+    rescueWordIds: saved.rescueWordIds ?? [],
+    rescueAttempts: saved.rescueAttempts ?? [],
+    rescueStars: saved.rescueStars ?? 0,
+  };
 }
 
 function freshState() {
@@ -94,6 +105,11 @@ function freshState() {
     day1CompletedAt: null,
     day2StartedAt: null,
     excludedItemIds: [],
+    rescueWordIds: [],
+    rescueIndex: 0,
+    rescueStage: "clue",
+    rescueAttempts: [],
+    rescueStars: 0,
     completedAt: null,
   };
 }
@@ -105,6 +121,7 @@ function render() {
     case "welcome": renderWelcome(); break;
     case "dataset-update": renderDatasetUpdate(); break;
     case "practice": renderQuestion(practiceItems[state.practiceIndex], state.practiceIndex, practiceItems.length, "练习"); break;
+    case "practice-complete": renderWarmupComplete(); break;
     case "day1": renderQuestion(exams[state.form].day1[state.day1Index], state.day1Index, exams[state.form].day1.length, "第一天 · 基础筛查"); break;
     case "novel-intro": renderNovelIntro(); break;
     case "novel-select": renderNovelSelect(); break;
@@ -113,6 +130,9 @@ function render() {
     case "waiting": renderWaiting(); break;
     case "day2-intro": renderDay2Intro(); break;
     case "delayed": renderQuestion(delayedItems()[state.delayedIndex], state.delayedIndex, delayedItems().length, "第二天 · 隔天回忆"); break;
+    case "rescue-intro": renderRescueIntro(); break;
+    case "rescue": renderMemoryRescue(); break;
+    case "rescue-complete": renderRescueComplete(); break;
     case "day2": renderQuestion(exams[state.form].day2[state.day2Index], state.day2Index, exams[state.form].day2.length, "第二天 · 长词定位"); break;
     case "report": renderReport(); break;
     default: renderWelcome();
@@ -184,6 +204,7 @@ function renderQuestion(item, index, total, sectionLabel) {
   if (!item) return advanceAfterQuestionSection();
   const percentage = Math.round((index / total) * 100);
   const common = `
+    ${effortHud(index, total, sectionLabel)}
     <div class="progress-meta"><span>${sectionLabel}</span><span>${index + 1} / ${total}</span></div>
     <div class="progress-track"><span style="width:${percentage}%"></span></div>`;
 
@@ -222,6 +243,21 @@ function renderQuestion(item, index, total, sectionLabel) {
   startQuestionHintTimer();
 }
 
+function effortHud(index, total, sectionLabel) {
+  const label = sectionLabel === "练习" ? "热身能量" : sectionLabel.includes("隔天") ? "记忆勇气" : sectionLabel.includes("第二天") ? "最后冲刺" : "探索能量";
+  return `<div class="effort-hud"><span>⚡ ${index}</span><small>${label} · 完成就会增长，不按对错扣除</small><strong>${index} / ${total}</strong></div>`;
+}
+
+function renderWarmupComplete() {
+  app.innerHTML = `
+    <section class="panel quest-panel">
+      <div class="quest-badge large"><span>★</span><strong>热身达人</strong><small>听音、选择和小写键盘都已解锁</small></div>
+      <h2>操作全会了，第一枚徽章到手！</h2>
+      <p class="lead">正式挑战不扣命，也不会公开比较分数。每完成一题，探索能量都会增加。</p>
+      <div class="action-row"><button class="primary-button" data-action="begin-day1">带着徽章出发</button></div>
+    </section>`;
+}
+
 function choiceButtons(choices) {
   return `<div class="choice-grid">${choices.map((choice) => `<button class="choice-button" data-action="choose" data-value="${escapeHtml(choice)}">${escapeHtml(choice)}</button>`).join("")}</div>`;
 }
@@ -231,7 +267,7 @@ function keyboard() {
   return `<div class="letter-keyboard" aria-label="字母键盘">
     ${letters.map((letter) => `<button class="key" data-action="letter" data-value="${letter}">${letter}</button>`).join("")}
     <button class="key wide" data-action="backspace">删除</button>
-    <button class="key submit" data-action="submit-spelling" ${currentInput ? "" : "disabled"}>提交</button>
+    <button class="key submit" data-action="submit-spelling" ${currentInput ? "" : "disabled"}>${state.screen === "rescue" ? "挑战" : "提交"}</button>
   </div>`;
 }
 
@@ -307,9 +343,11 @@ function renderWaiting() {
   const outsideIdeal = elapsed > SECOND_DAY_MAX_MS;
   app.innerHTML = `
     <section class="panel">
-      <span class="status-chip">✓ 第一天已保存</span>
-      <h2 style="margin-top:18px">先让记忆睡一觉</h2>
-      <p class="lead">第一天的答案暂时不公布。第二次先检查昨天的新词还记得多少，再完成长词定位。</p>
+      <div class="quest-badge" aria-label="第一天挑战完成"><span>★</span><strong>勇气徽章</strong><small>第一天挑战完成</small></div>
+      <span class="status-chip">✓ 所有答案都已保存</span>
+      <h2 style="margin-top:18px">今天已经闯过第一关</h2>
+      <p class="lead">认真完成比答对多少更重要。先让记忆睡一觉，明天先看看还记得什么，再用记忆线索把难词赢回来。</p>
+      <div class="quest-path" aria-label="两天挑战进度"><span class="done">1 完成挑战</span><span class="active">2 唤醒记忆</span><span>3 解锁报告</span></div>
       <div class="waiting-clock">${ready ? "可以开始第二天" : formatDuration(remaining)}</div>
       ${outsideIdeal ? `<div class="notice">已经超过理想的 36 小时间隔。仍然可以继续，报告会保留实际间隔时间。</div>` : ""}
       <div class="action-row">
@@ -325,15 +363,103 @@ function renderDay2Intro() {
   app.innerHTML = `
     <section class="panel">
       <p class="eyebrow">Day two</p>
-      <h2>先回忆昨天的新词</h2>
-      <p class="lead">已经间隔约 ${hours} 小时。先做 8 个无提示回忆题，再完成最后一组熟词。全部结束后会生成完整报告。</p>
-      <div class="action-row"><button class="primary-button" data-action="begin-delayed">开始隔天回忆</button></div>
+      <div class="quest-score">⭐ 0 <small>今天从零开始，只加星，不扣命</small></div>
+      <h2>先唤醒昨天的记忆</h2>
+      <p class="lead">已经间隔约 ${hours} 小时。先做8个无提示回忆，保留真实结果；然后进入“记忆救援”，用拆分和趣味线索把难词赢回来。</p>
+      <div class="notice">不会的词不是失败，而是待解锁的关卡。所有题都可以继续，没有红心，也不会扣分退出。</div>
+      <div class="action-row"><button class="primary-button" data-action="begin-delayed">开始唤醒记忆</button></div>
+    </section>`;
+}
+
+function renderRescueIntro() {
+  const remembered = delayedItems().filter((item) => state.attempts.find((attempt) => attempt.itemId === item.id)?.analysis?.correct).length;
+  app.innerHTML = `
+    <section class="panel quest-panel">
+      <div class="quest-score">⭐ ${remembered}<small>每一个想起来的词都是一颗星</small></div>
+      <p class="eyebrow">记忆救援 · 奖励关</p>
+      <h2>${remembered ? `你已经唤醒了 ${remembered} 个词！` : "真正的学习现在才开始！"}</h2>
+      <p class="lead">接下来只挑最多4个挑战词。先看拆分和趣味线索，再补词块，最后独立拼写。答错不扣星，只会得到更多提示。</p>
+      <div class="quest-path"><span class="done">✓ 无提示记录</span><span class="active">记忆救援</span><span>最后挑战</span></div>
+      <div class="action-row"><button class="primary-button" data-action="begin-rescue">开始赚星星</button></div>
+    </section>`;
+}
+
+function renderMemoryRescue() {
+  const word = rescueWords()[state.rescueIndex];
+  if (!word) return finishRescue();
+  const card = memoryCardFor(word.word);
+  const progress = state.rescueIndex / state.rescueWordIds.length * 100;
+  const common = `
+    <div class="quest-head"><div class="quest-score">⭐ ${state.rescueStars}</div><strong>${state.rescueIndex + 1} / ${state.rescueWordIds.length}</strong></div>
+    <div class="progress-track"><span style="width:${progress}%"></span></div>`;
+
+  if (state.rescueStage === "clue") {
+    app.innerHTML = `<section class="panel quest-panel">${common}
+      <p class="question-label">第1步 · 找到记忆线索</p>
+      <div class="learning-word">${word.word}</div>
+      <div class="learning-meaning">${word.meaning}</div>
+      <div class="word-chunks">${card.chunks.map((chunk) => `<span>${escapeHtml(chunk)}</span>`).join("")}</div>
+      <div class="mnemonic-story">💡 ${escapeHtml(card.mnemonic)}</div>
+      <button class="audio-button" data-action="play-audio" data-word="${word.word}">播放英式发音</button>
+      <div class="action-row"><button class="primary-button" data-action="clue-found">我找到线索了 +1⭐</button></div>
+    </section>`;
+    return;
+  }
+
+  if (state.rescueStage === "chunk") {
+    const missing = card.chunks.at(-1);
+    const visible = card.chunks.slice(0, -1);
+    app.innerHTML = `<section class="panel quest-panel question-card">${common}
+      <p class="question-label">第2步 · 补上最后一块</p>
+      <div class="chunk-puzzle">${visible.map((chunk) => `<span>${escapeHtml(chunk)}</span>`).join("")}<span class="missing-chunk">?</span></div>
+      <p class="question-hint">拼成“${escapeHtml(word.meaning)}”还缺哪一块？</p>
+      <div class="chunk-choices">${chunkChoices(missing).map((choice) => `<button class="choice-button" data-action="choose-chunk" data-value="${escapeHtml(choice)}">${escapeHtml(choice)}</button>`).join("")}</div>
+      ${feedback ? `<div class="feedback ${feedback.kind}">${feedback.message}</div>` : ""}
+    </section>`;
+    return;
+  }
+
+  if (state.rescueStage === "answer") {
+    renderRescueAnswer(word, card, common);
+    return;
+  }
+
+  app.innerHTML = `<section class="panel quest-panel question-card">${common}
+    <p class="question-label">最终挑战 · 自己拼出来</p>
+    <div class="question-prompt">${escapeHtml(word.meaning)}</div>
+    <div class="spelling-display ${currentInput ? "" : "placeholder"}">${currentInput ? escapeHtml(currentInput) : "你已经拿到线索，试试看"}</div>
+    ${keyboard()}
+    <div class="unknown-row"><button class="quiet-button" data-action="reveal-rescue-answer">看答案再继续，不扣星</button></div>
+    ${feedback ? `<div class="feedback ${feedback.kind}">${feedback.message}</div>` : ""}
+  </section>`;
+}
+
+function renderRescueAnswer(word, card, common) {
+  app.innerHTML = `<section class="panel quest-panel">${common}
+    <p class="question-label">先收下答案，下次再独立挑战</p>
+    <div class="learning-word">${escapeHtml(word.word)}</div>
+    <div class="learning-meaning">${escapeHtml(word.meaning)}</div>
+    <div class="word-chunks">${card.chunks.map((chunk) => `<span>${escapeHtml(chunk)}</span>`).join("")}</div>
+    <p class="lead">你已经完成了线索和拼图两关，这个词不是零分，只是最后一颗星留到下次。</p>
+    <div class="action-row"><button class="primary-button" data-action="continue-rescue-word">收进记忆口袋，继续</button></div>
+  </section>`;
+}
+
+function renderRescueComplete() {
+  app.innerHTML = `
+    <section class="panel quest-panel">
+      <div class="quest-badge large"><span>★</span><strong>记忆探险家</strong><small>提示不是作弊，是学习工具</small></div>
+      <h2>你把难词赢回来了！</h2>
+      <div class="final-stars">⭐ ${state.rescueStars}</div>
+      <p class="lead">无提示结果仍然保留；这些星星记录的是使用记忆方法后的进步。现在再完成最后一组熟词，就能解锁完整报告。</p>
+      <div class="action-row"><button class="primary-button" data-action="continue-day2">继续最后一关</button></div>
     </section>`;
 }
 
 function renderReport() {
   const report = buildReport();
   const failed = report.verdict.failedMetrics.map((key) => METRIC_LABELS[key]).join("、");
+  const rescuedCount = new Set(state.rescueAttempts.filter((attempt) => attempt.correct).map((attempt) => attempt.wordId)).size;
   app.innerHTML = `
     <section class="panel">
       <div class="report-header">
@@ -356,6 +482,12 @@ function renderReport() {
         ${metricCard("隔天保持", report.metrics.delayed, 0.7)}
       </div>
       <p class="question-hint" style="margin-top:18px">两次测试实际间隔：${formatInterval(report.delayedIntervalMs)}。</p>
+    </section>
+    <section class="panel quest-panel">
+      <div class="quest-badge"><span>★</span><strong>记忆救援成果</strong><small>和无提示诊断分开记录</small></div>
+      <h3>使用线索后学会 ${rescuedCount} / ${state.rescueWordIds.length || 0} 个挑战词</h3>
+      <div class="final-stars">⭐ ${state.rescueStars}</div>
+      <p class="question-hint">星星表示完成拆分、词块和独立拼写关卡，不会替代无提示隔天保持率。</p>
     </section>
     <section class="panel">
       <h3>个人长词门槛</h3>
@@ -411,10 +543,15 @@ async function handleClick(event) {
     if (state.screen === "welcome") state.screen = state.practiceIndex >= practiceItems.length ? "day1" : "practice";
     persistAndRender(); return;
   }
+  if (action === "begin-day1") { state.screen = "day1"; persistAndRender(); return; }
   if (action === "play-audio") { playAudio(word); return; }
   if (action === "letter") { currentInput += value; feedback = null; render(); return; }
   if (action === "backspace") { currentInput = currentInput.slice(0, -1); feedback = null; render(); return; }
-  if (action === "submit-spelling") { submitCurrent(currentInput, false); return; }
+  if (action === "submit-spelling") {
+    if (state.screen === "rescue") submitRescueSpelling();
+    else submitCurrent(currentInput, false);
+    return;
+  }
   if (action === "unknown") { submitCurrent("", true); return; }
   if (action === "skip") { submitCurrent("", false); return; }
   if (action === "choose") { submitCurrent(value, false); return; }
@@ -431,6 +568,36 @@ async function handleClick(event) {
   if (action === "learn-next") { state.novelLearningIndex += 1; persistAndRender(); return; }
   if (action === "start-day2") { state.screen = "day2-intro"; state.day2StartedAt = Date.now(); persistAndRender(); return; }
   if (action === "begin-delayed") { state.screen = "delayed"; persistAndRender(); return; }
+  if (action === "begin-rescue") {
+    state.rescueWordIds = rescueWordIds(state.novelWords, state.attempts);
+    state.rescueIndex = 0;
+    state.rescueStage = "clue";
+    state.screen = "rescue";
+    persistAndRender(); return;
+  }
+  if (action === "clue-found") {
+    if (state.screen !== "rescue" || state.rescueStage !== "clue") return;
+    button.disabled = true;
+    state.rescueStars += 1;
+    state.rescueStage = "chunk";
+    feedback = null;
+    persistAndRender(); return;
+  }
+  if (action === "choose-chunk") { handleChunkChoice(value); return; }
+  if (action === "reveal-rescue-answer") {
+    if (state.screen !== "rescue" || state.rescueStage !== "spell") return;
+    state.rescueAttempts.push({ wordId: rescueWords()[state.rescueIndex].wordId, response: currentInput, correct: false, revealed: true, completedAt: Date.now() });
+    currentInput = "";
+    feedback = null;
+    state.rescueStage = "answer";
+    persistAndRender(); return;
+  }
+  if (action === "continue-rescue-word") {
+    if (state.screen !== "rescue" || state.rescueStage !== "answer") return;
+    advanceRescueWord();
+    persistAndRender(); return;
+  }
+  if (action === "continue-day2") { state.screen = "day2"; persistAndRender(); return; }
   if (action === "toggle-exclude") {
     state.excludedItemIds = state.excludedItemIds.includes(value)
       ? state.excludedItemIds.filter((id) => id !== value)
@@ -477,7 +644,7 @@ async function submitCurrent(response, unknown) {
 
   if (state.screen === "practice") {
     state.practiceIndex += 1;
-    if (state.practiceIndex >= practiceItems.length) state.screen = "day1";
+    if (state.practiceIndex >= practiceItems.length) state.screen = "practice-complete";
   } else if (state.screen === "day1") {
     state.day1Index += 1;
     if (state.day1Index >= exams[state.form].day1.length) state.screen = "novel-intro";
@@ -489,7 +656,7 @@ async function submitCurrent(response, unknown) {
     }
   } else if (state.screen === "delayed") {
     state.delayedIndex += 1;
-    if (state.delayedIndex >= delayedItems().length) state.screen = "day2";
+    if (state.delayedIndex >= delayedItems().length) state.screen = "rescue-intro";
   } else if (state.screen === "day2") {
     state.day2Index += 1;
     if (state.day2Index >= exams[state.form].day2.length) {
@@ -513,6 +680,63 @@ function currentItem() {
 
 function immediateItems() { return buildNovelItems(state.novelWords).filter((item) => item.type === "immediate"); }
 function delayedItems() { return buildNovelItems(state.novelWords).filter((item) => item.type === "delayed"); }
+function rescueWords() {
+  return state.rescueWordIds.map((wordId) => state.novelWords.find((word) => word.wordId === wordId)).filter(Boolean);
+}
+
+function chunkChoices(correct) {
+  const variants = [correct, `${correct}e`, correct.length > 1 ? correct.slice(0, -1) : `${correct}a`];
+  return [...new Set(variants)].sort((a, b) => `${state.rescueIndex}-${a}`.localeCompare(`${state.rescueIndex}-${b}`));
+}
+
+function handleChunkChoice(choice) {
+  if (state.screen !== "rescue" || state.rescueStage !== "chunk") return;
+  document.querySelectorAll('[data-action="choose-chunk"]').forEach((choiceButton) => { choiceButton.disabled = true; });
+  const word = rescueWords()[state.rescueIndex];
+  const correct = memoryCardFor(word.word).chunks.at(-1);
+  if (choice !== correct) {
+    feedback = { kind: "try", message: "差一点！星星不会减少，再看看上面的词块。" };
+    render();
+    return;
+  }
+  state.rescueStars += 1;
+  state.rescueStage = "spell";
+  feedback = { kind: "good", message: "拼图完成！再拿下最后一颗星。" };
+  persistAndRender();
+}
+
+async function submitRescueSpelling() {
+  if (submitting || state.screen !== "rescue" || state.rescueStage !== "spell") return;
+  const word = rescueWords()[state.rescueIndex];
+  const analysis = scoreAttempt({ ...word, type: "spelling", answer: word.word, group: "rescue" }, { response: currentInput });
+  state.rescueAttempts.push({ wordId: word.wordId, response: currentInput, correct: analysis.correct, completedAt: Date.now() });
+  if (!analysis.correct) {
+    feedback = { kind: "try", message: `已经很接近了！看一眼线索：${memoryCardFor(word.word).chunks.join(" + ")}` };
+    currentInput = "";
+    await saveState(state);
+    render();
+    return;
+  }
+  submitting = true;
+  state.rescueStars += 1;
+  currentInput = "";
+  feedback = null;
+  advanceRescueWord();
+  await saveState(state);
+  submitting = false;
+  render();
+}
+
+function advanceRescueWord() {
+  state.rescueIndex += 1;
+  state.rescueStage = "clue";
+  if (state.rescueIndex >= state.rescueWordIds.length) state.screen = "rescue-complete";
+}
+
+function finishRescue() {
+  state.screen = "rescue-complete";
+  persistAndRender();
+}
 
 function finishNovelSelection() {
   state.screen = "novel-learn";
@@ -527,10 +751,10 @@ function startImmediateRecall() {
 }
 
 function advanceAfterQuestionSection() {
-  if (state.screen === "practice") state.screen = "day1";
+  if (state.screen === "practice") state.screen = "practice-complete";
   else if (state.screen === "day1") state.screen = "novel-intro";
   else if (state.screen === "immediate") state.screen = "waiting";
-  else if (state.screen === "delayed") state.screen = "day2";
+  else if (state.screen === "delayed") state.screen = "rescue-intro";
   else if (state.screen === "day2") state.screen = "report";
   persistAndRender();
 }

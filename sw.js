@@ -1,4 +1,4 @@
-const CACHE = "minnie-diagnostic-data-v2-lowercase-keyboard";
+const CACHE = "minnie-diagnostic-data-v2-memory-quest";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -8,6 +8,7 @@ const APP_SHELL = [
   "./src/data.js",
   "./src/curriculum.js",
   "./src/diagnostic.js",
+  "./src/memory-cards.js",
   "./src/storage.js",
   "./src/state-version.js",
   "./assets/icon-192.png",
