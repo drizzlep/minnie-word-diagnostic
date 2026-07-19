@@ -76,10 +76,12 @@ export function generateReport({ items, attempts, novelWordIds = [], excludedWor
     ))];
   }));
 
-  const failedMetrics = Object.entries(MASTERY_THRESHOLDS)
+  const delayedEligible = delayedIntervalMs === null || delayedIntervalMs >= 18 * 60 * 60 * 1000;
+  const requiredThresholds = Object.entries(MASTERY_THRESHOLDS).filter(([key]) => key !== "delayed" || delayedEligible);
+  const failedMetrics = requiredThresholds
     .filter(([key, threshold]) => metrics[key].total > 0 && metrics[key].value < threshold)
     .map(([key]) => key);
-  const allRequiredPresent = Object.keys(MASTERY_THRESHOLDS).every((key) => metrics[key].total > 0);
+  const allRequiredPresent = requiredThresholds.every(([key]) => metrics[key].total > 0);
   const passed = allRequiredPresent && failedMetrics.length === 0;
   const unknownCount = results.filter(({ item, attempt }) => item.group === "core" && attempt.unknown).length;
   const errorTypes = countErrorTypes(results);
@@ -122,6 +124,7 @@ export function generateReport({ items, attempts, novelWordIds = [], excludedWor
     challengeWords,
     sampleSize: results.length,
     delayedIntervalMs,
+    delayedEligible,
     generatedAt: Date.now(),
   };
 }

@@ -1,4 +1,4 @@
-const CACHE = "minnie-diagnostic-data-v2-memory-quest";
+const CACHE = "minnie-diagnostic-data-v2-early-recall";
 const APP_SHELL = [
   "./",
   "./index.html",

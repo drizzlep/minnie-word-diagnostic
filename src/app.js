@@ -129,7 +129,7 @@ function render() {
     case "immediate": renderQuestion(immediateItems()[state.immediateIndex], state.immediateIndex, immediateItems().length, "第一天 · 新词立即回忆"); break;
     case "waiting": renderWaiting(); break;
     case "day2-intro": renderDay2Intro(); break;
-    case "delayed": renderQuestion(delayedItems()[state.delayedIndex], state.delayedIndex, delayedItems().length, "第二天 · 隔天回忆"); break;
+    case "delayed": renderQuestion(delayedItems()[state.delayedIndex], state.delayedIndex, delayedItems().length, recallSectionLabel()); break;
     case "rescue-intro": renderRescueIntro(); break;
     case "rescue": renderMemoryRescue(); break;
     case "rescue-complete": renderRescueComplete(); break;
@@ -349,9 +349,10 @@ function renderWaiting() {
       <p class="lead">认真完成比答对多少更重要。先让记忆睡一觉，明天先看看还记得什么，再用记忆线索把难词赢回来。</p>
       <div class="quest-path" aria-label="两天挑战进度"><span class="done">1 完成挑战</span><span class="active">2 唤醒记忆</span><span>3 解锁报告</span></div>
       <div class="waiting-clock">${ready ? "可以开始第二天" : formatDuration(remaining)}</div>
+      ${!ready ? `<div class="notice">如果希望明天直接进入训练，可以提前完成；${recallMode(Date.now()) === "same-day" ? "这次会标记为“同日保持”" : "这次会标记为“短间隔保持”"}，不能作为24小时隔天保持率。</div>` : ""}
       ${outsideIdeal ? `<div class="notice">已经超过理想的 36 小时间隔。仍然可以继续，报告会保留实际间隔时间。</div>` : ""}
       <div class="action-row">
-        <button class="primary-button" data-action="start-day2" ${ready ? "" : "disabled"}>开始第二天</button>
+        <button class="primary-button" data-action="start-day2">${ready ? "开始第二天" : recallMode(Date.now()) === "same-day" ? "今天提前完成第二次" : "提前完成第二次"}</button>
         <button class="secondary-button" data-action="export-progress">导出当前进度</button>
       </div>
     </section>`;
@@ -360,12 +361,16 @@ function renderWaiting() {
 
 function renderDay2Intro() {
   const hours = Math.round((Date.now() - state.day1CompletedAt) / 360000) / 10;
+  const mode = recallMode(state.day2StartedAt);
+  const early = mode !== "delayed";
+  const recallName = mode === "same-day" ? "同日" : mode === "short" ? "短间隔" : "隔天";
   app.innerHTML = `
     <section class="panel">
       <p class="eyebrow">Day two</p>
       <div class="quest-score">⭐ 0 <small>今天从零开始，只加星，不扣命</small></div>
       <h2>先唤醒昨天的记忆</h2>
-      <p class="lead">已经间隔约 ${hours} 小时。先做8个无提示回忆，保留真实结果；然后进入“记忆救援”，用拆分和趣味线索把难词赢回来。</p>
+      <p class="lead">已经间隔约 ${hours} 小时。先做8个无提示${recallName}回忆，保留真实结果；然后进入“记忆救援”，用拆分和趣味线索把难词赢回来。</p>
+      ${early ? `<div class="notice">本次属于${recallName}保持测试。应用会保留实际间隔，但不会把它解释成24小时隔天记忆，也不参与隔天保持达标判定。</div>` : ""}
       <div class="notice">不会的词不是失败，而是待解锁的关卡。所有题都可以继续，没有红心，也不会扣分退出。</div>
       <div class="action-row"><button class="primary-button" data-action="begin-delayed">开始唤醒记忆</button></div>
     </section>`;
@@ -479,9 +484,10 @@ function renderReport() {
         ${metricCard("核心词拼写", report.metrics.spelling, 0.85)}
         ${metricCard("8字母以上", report.metrics.longSpelling, 0.75)}
         ${metricCard("立即记忆", report.metrics.immediate, null)}
-        ${metricCard("隔天保持", report.metrics.delayed, 0.7)}
+        ${metricCard(recallMetricLabel(), report.metrics.delayed, report.delayedEligible ? 0.7 : null)}
       </div>
       <p class="question-hint" style="margin-top:18px">两次测试实际间隔：${formatInterval(report.delayedIntervalMs)}。</p>
+      ${report.delayedEligible ? "" : `<p class="question-hint">本次保持率属于提前观察，不参与“隔天保持”达标判定。</p>`}
     </section>
     <section class="panel quest-panel">
       <div class="quest-badge"><span>★</span><strong>记忆救援成果</strong><small>和无提示诊断分开记录</small></div>
@@ -566,7 +572,15 @@ async function handleClick(event) {
     persistAndRender(); return;
   }
   if (action === "learn-next") { state.novelLearningIndex += 1; persistAndRender(); return; }
-  if (action === "start-day2") { state.screen = "day2-intro"; state.day2StartedAt = Date.now(); persistAndRender(); return; }
+  if (action === "start-day2") {
+    const elapsed = Date.now() - state.day1CompletedAt;
+    const mode = recallMode(Date.now());
+    const label = mode === "same-day" ? "同日保持" : "短间隔保持";
+    if (elapsed < SECOND_DAY_MIN_MS && !window.confirm(`现在开始会记录为${label}，不能代表24小时隔天记忆。确认提前完成第二次吗？`)) return;
+    state.screen = "day2-intro";
+    state.day2StartedAt = Date.now();
+    persistAndRender(); return;
+  }
   if (action === "begin-delayed") { state.screen = "delayed"; persistAndRender(); return; }
   if (action === "begin-rescue") {
     state.rescueWordIds = rescueWordIds(state.novelWords, state.attempts);
@@ -842,6 +856,25 @@ function formatInterval(ms) {
   const hours = Math.round(ms / 360000) / 10;
   const note = ms >= SECOND_DAY_MIN_MS && ms <= SECOND_DAY_MAX_MS ? "在建议的 18–36 小时范围内" : "不在建议的 18–36 小时范围内";
   return `${hours} 小时，${note}`;
+}
+
+function recallSectionLabel() {
+  const mode = recallMode(state.day2StartedAt);
+  return mode === "same-day" ? "第二次 · 同日回忆" : mode === "short" ? "第二次 · 短间隔回忆" : "第二天 · 隔天回忆";
+}
+
+function recallMetricLabel() {
+  const mode = recallMode(state.day2StartedAt);
+  return mode === "same-day" ? "同日保持（提前）" : mode === "short" ? "短间隔保持" : "隔天保持";
+}
+
+function recallMode(secondStartedAt) {
+  if (!state.day1CompletedAt || !secondStartedAt || secondStartedAt - state.day1CompletedAt >= SECOND_DAY_MIN_MS) return "delayed";
+  const first = new Date(state.day1CompletedAt);
+  const second = new Date(secondStartedAt);
+  return first.getFullYear() === second.getFullYear() && first.getMonth() === second.getMonth() && first.getDate() === second.getDate()
+    ? "same-day"
+    : "short";
 }
 
 function exportPayload(includeReport) {
